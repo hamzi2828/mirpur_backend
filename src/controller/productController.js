@@ -64,6 +64,33 @@ const writeOptions = async (req) => {
 
 const uniq = (list) => [...new Set(list || [])];
 
+// Editing a product never changes its stock: stock is only added from the
+// Stock page (POST /products/:id/stock/receive) so every change is in the
+// stock history. Drops stock / boxes / loose pieces / branchStock / batches
+// (product and each variant); the saved values are kept by the update service.
+const STOCK_KEYS = ['stock', 'boxes', 'loosePieces', 'branchStock', 'batches'];
+function lockStockFields(payload) {
+  STOCK_KEYS.forEach((k) => delete payload[k]);
+  if (payload.variants === undefined) return;
+  const wasString = typeof payload.variants === 'string';
+  let list = payload.variants;
+  if (wasString) {
+    try {
+      list = JSON.parse(list);
+    } catch (_) {
+      return;
+    }
+  }
+  if (!Array.isArray(list)) return;
+  list = list.map((v) => {
+    if (!v || typeof v !== 'object') return v;
+    const copy = { ...v };
+    STOCK_KEYS.forEach((k) => delete copy[k]);
+    return copy;
+  });
+  payload.variants = wasString ? JSON.stringify(list) : list;
+}
+
 // Status-carrying errors (403 no branch, 400 bad branchStock, 409 conflict).
 const statusError = (res, error) => {
   if (error && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) {
@@ -306,6 +333,7 @@ const productController = {
         return res.status(400).json({ message: 'Branch not found' });
       }
       delete payload.ownerBranch;
+      lockStockFields(payload);
       const opts = await writeOptions(req);
       let updated = await updateProductService.updateProduct(id, payload, files, opts);
       if (changeOwner && updated && updated._id) {
