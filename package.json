@@ -25,6 +25,7 @@
     "seed:car-hierarchy": "node src/seeds/seedCarHierarchy.js",
     "migrate:product-codes": "node scripts/backfillProductCodes.js",
     "migrate:branches": "node scripts/migrateBranches.js",
+    "sync:branch-manager": "node scripts/syncBranchManagerRole.js",
     "seed:demo-branches": "node Seeder/createDemoBranches.js"
   },
   "repository": {

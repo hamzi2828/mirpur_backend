@@ -20,8 +20,12 @@ New permission keys: `branches` (see all branches), `staff` (manage staff logins
 `stock_receive`. The full list comes from `GET /admin/roles/catalogue`.
 
 Default roles (created by the migration, editable): **Admin** (system, everything), **Branch Manager**
-(dashboard, POS, POS orders, customers, products view, stock view/receive/transfer, expenses,
-purchases, branch reports), **Cashier** (dashboard, POS sell, POS orders view, customers, products view).
+(runs the whole shop of their branch: dashboard, POS, POS orders, load, all branch reports, products,
+categories, attributes, stock receive/transfer, customers, banks, expenses, staff of their own branch —
+everything except branches, roles, settings and activity log), **Cashier** (dashboard, POS sell,
+POS orders view, customers, products view).
+To give an existing Branch Manager role these defaults: `npm run sync:branch-manager` (dry run), then
+`npm run sync:branch-manager -- --apply`.
 
 ## 2. Super admin vs branch staff
 
