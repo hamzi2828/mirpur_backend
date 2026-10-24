@@ -14,6 +14,7 @@ const {
   sameBranch,
 } = require('../helper/productCodes');
 const { resolveWriteBranch } = require('../middleware/access');
+const { productScopeFilter, canSeeProduct } = require('../helper/productScope');
 
 // Admin view of a product: `stock` = stock in the request's branch (staff: own
 // branch; super admin: picked branch or all) — see productCodes.withBranchStock.
@@ -56,6 +57,11 @@ const inventoryController = {
       const body = req.body || {};
       const batch = parseMaybeJSON(body.batch);
       const branchId = req.access ? await resolveWriteBranch(req) : undefined;
+      // A branch's own product can only get stock in that branch.
+      const owner = await Product.findById(id).select('ownerBranch').lean();
+      if (!owner || !canSeeProduct(req, owner, branchId)) {
+        return res.status(404).json({ success: false, message: 'Product not found in this branch' });
+      }
 
       const result = await stockService.receiveStock({
         productId: id,
@@ -97,11 +103,18 @@ const inventoryController = {
         if (!isValidId(excludeId)) return res.status(400).json({ success: false, message: 'Invalid excludeId' });
         filter._id = { $ne: excludeId };
       }
-      const owner = await Product.findOne(filter, { name: 1 }).lean();
+      // Codes are unique across ALL branches; a product of another branch is
+      // reported without its name.
+      const owner = await Product.findOne(filter, { name: 1, ownerBranch: 1 }).lean();
+      const visible = owner && canSeeProduct(req, owner);
       const result = {
         code,
         available: !owner,
-        usedBy: owner ? { productId: owner._id, name: owner.name } : undefined,
+        usedBy: owner
+          ? visible
+            ? { productId: owner._id, name: owner.name }
+            : { productId: null, name: "another branch's product" }
+          : undefined,
       };
       return res.status(200).json({ success: true, ...result, data: result });
     } catch (error) {
@@ -113,7 +126,7 @@ const inventoryController = {
   // GET /products/codes/lookup/:code — admin version of the POS scan (any status).
   lookupCode: async (req, res) => {
     try {
-      const found = await findProductByCode(req.params.code);
+      const found = await findProductByCode(req.params.code, productScopeFilter(req));
       if (!found) return res.status(404).json({ success: false, message: 'No product uses this code' });
 
       const { product, match: m } = found;

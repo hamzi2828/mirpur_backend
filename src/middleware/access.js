@@ -116,6 +116,34 @@ async function loadAccess(req, res, next) {
   }
 }
 
+// For public routes that staff also use (e.g. GET /products): when the caller
+// sends a valid STAFF token, load req.access like loadAccess; otherwise (no
+// token, bad token, customer, disabled account) carry on as a public call.
+async function optionalAccess(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    const secret = process.env.JWT_SECRET;
+    if (!token || !secret) return next();
+    let decoded;
+    try {
+      decoded = require('jsonwebtoken').verify(token, secret);
+    } catch (_) {
+      return next();
+    }
+    const userId = decoded && (decoded._id || decoded.id);
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) return next();
+    const info = await loadUserAccess(userId);
+    if (!info || info.user.isActive === false) return next();
+    if (!info.isSuperAdmin && !info.user.staffRole) return next(); // customer
+    req.user = req.user || decoded;
+    return loadAccess(req, res, next);
+  } catch (err) {
+    console.error('optionalAccess error:', err);
+    return next();
+  }
+}
+
 // Middleware factory: needs req.access (loadAccess). Accepts one key or a list
 // (any one of them is enough), e.g. requirePermission(['pos', 'pos_orders'], 'view').
 const requirePermission = (keys, action = 'view') => {
@@ -158,6 +186,7 @@ async function resolveWriteBranch(req) {
 
 module.exports = {
   loadAccess,
+  optionalAccess,
   requirePermission,
   requireSuperAdmin,
   branchFilter,

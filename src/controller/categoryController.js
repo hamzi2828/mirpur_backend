@@ -134,6 +134,7 @@ const categoryController = {
           ? Product.find({
               _id: { $in: Array.from(pickedIds) },
               status: 'published',
+              ownerBranch: null, // website: shared products only
             }).lean()
           : Promise.resolve([]),
         fallbackNames.size
@@ -141,6 +142,7 @@ const categoryController = {
               category: { $in: Array.from(fallbackNames) },
               status: 'published',
               stock: { $gt: 0 },
+              ownerBranch: null, // website: shared products only
             }).lean()
           : Promise.resolve([]),
       ]);
@@ -227,7 +229,8 @@ const categoryController = {
         return res.status(404).json({ message: 'Category not found' });
       }
 
-      const products = await Product.find({ category: category.name }).sort({ createdAt: -1 });
+      const { productScopeFilter } = require('../helper/productScope');
+      const products = await Product.find({ category: category.name, ...productScopeFilter(req) }).sort({ createdAt: -1 });
       return res.status(200).json({
         message: 'Products fetched successfully',
         data: {

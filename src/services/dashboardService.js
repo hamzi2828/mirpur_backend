@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Order = require('../models/order');
 const User = require('../models/user');
 const Product = require('../models/product');
@@ -13,6 +14,12 @@ const { branchStockExpr, withBranchStock, byBranchBreakdown } = require('../help
 const ALL_BRANCHES = { allBranches: true, branchId: null, mainBranchId: null, isMain: false, filter: {} };
 const NO_MATCH = { _id: null };
 const withScope = (scope) => scope || ALL_BRANCHES;
+// Products a branch sees: shared ones + its own (see helper/productScope.js).
+const productsOf = (scope) => {
+  const sc = withScope(scope);
+  if (sc.allBranches || !sc.branchId) return {};
+  return { ownerBranch: { $in: [null, new mongoose.Types.ObjectId(String(sc.branchId))] } };
+};
 const webFilter = (scope, filter = {}) => {
   const sc = withScope(scope);
   return sc.allBranches || sc.isMain ? filter : { ...filter, ...NO_MATCH };
@@ -50,7 +57,7 @@ class DashboardService {
     const [totalOrders, totalUsers, totalProducts, orderStats, posStats, byBranch] = await Promise.all([
       Order.countDocuments(webDate),
       User.countDocuments(),
-      Product.countDocuments({ status: 'published' }),
+      Product.countDocuments({ status: 'published', ...productsOf(sc) }),
       Order.aggregate([
         { $match: webDate },
         {
@@ -125,7 +132,7 @@ class DashboardService {
     const sc = withScope(scope);
     if (sc.allBranches) return Product.countDocuments({ stock: stockCond, status: 'published' });
     const rows = await Product.aggregate([
-      { $match: { status: 'published' } },
+      { $match: { status: 'published', ...productsOf(sc) } },
       { $addFields: { _branchStock: branchStockExpr(sc.branchId, sc.isMain) } },
       { $match: { _branchStock: stockCond } },
       { $count: 'n' }
@@ -229,7 +236,7 @@ class DashboardService {
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
-      Product.find()
+      Product.find(productsOf(scope))
         .sort({ updatedAt: -1 })
         .limit(5)
         .lean()
@@ -428,7 +435,7 @@ class DashboardService {
 
   async getInventoryStatus(scope) {
     const [totalProducts, outOfStock, lowStock, inStock] = await Promise.all([
-      Product.countDocuments({ status: 'published' }),
+      Product.countDocuments({ status: 'published', ...productsOf(scope) }),
       withScope(scope).allBranches
         ? Product.countDocuments({ stock: 0, status: 'published' })
         : this.countProductsByStock({ $lte: 0 }, scope),

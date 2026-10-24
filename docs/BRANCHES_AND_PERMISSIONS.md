@@ -9,7 +9,8 @@ controller for the final response shape. Related guide: `BARCODES_BOXES_BATCHES.
 |---|---|
 | **Branch** | One shop (Branch 1, Branch 2...). Has `name`, `code` (e.g. `B1`), `address`, `phone`, `isActive`, `isMain`. |
 | **Main branch** | Exactly one. Old stock and old sales (before branches existed) belong to it. |
-| **Product catalog** | ONE catalog for all branches. Same barcode, short code and selling price everywhere. |
+| **Product catalog** | Shared products (made by the super admin) are seen by every branch. Same barcode, short code and selling price everywhere. |
+| **Branch product** | A product made by branch staff has `ownerBranch` = their branch: only that branch and the super admin see it (lists, POS, scans, labels, stock report, dashboard). It can't be transferred to another branch. The super admin can change it in the product form ("Who can see this product": All branches / one branch only) — send `ownerBranch` = branch id, or empty for shared. Barcodes and short codes stay unique across ALL branches. The website only shows shared products. |
 | **Branch stock** | Each branch has its OWN stock of every product / variant. |
 | **Super admin** | The owner. Sees and manages everything: all branches, products, staff, roles. |
 | **Branch staff** | A login that belongs to ONE branch. Only sees that branch's stock, sales, held orders, purchases, expenses, reports. |

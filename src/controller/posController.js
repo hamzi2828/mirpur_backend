@@ -10,6 +10,7 @@ const { findProductByCode, resolveScan, variantLabel, normalizeCode } = require(
 const stockService = require('../services/stockService');
 const Branch = require('../models/branch');
 const { resolveWriteBranch } = require('../middleware/access');
+const { productScopeFilter } = require('../helper/productScope');
 const {
   getMainBranchId,
   scopedBranchFilter,
@@ -79,6 +80,7 @@ const posController = {
       const query = {
         status: 'published',
         displayOn: { $in: ['pos', 'both'] },
+        ...productScopeFilter(req, branchId), // shared + this branch's own products
         $and: [branchProductStockQuery(branchId, mainBranchId)],
       };
 
@@ -138,6 +140,7 @@ const posController = {
       if (!branchId) return undefined;
       const mainBranchId = await getMainBranchId();
       const found = await findProductByCode(barcode, {
+        ...productScopeFilter(req, branchId), // other branches' own products: "not found"
         // out_of_stock included so the cashier sees "out of stock" instead of "not found"
         status: { $in: ['published', 'out_of_stock'] },
         displayOn: { $in: ['pos', 'both'] },

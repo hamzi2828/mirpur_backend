@@ -228,6 +228,18 @@ const transferController = {
         });
       }
 
+      // A branch's own product (ownerBranch set) stays in that branch: it can't be
+      // sent to another branch (the super admin can make it shared first).
+      const owned = await Product.find({
+        _id: { $in: [...new Set(lines.map((l) => l.productId))] },
+        ownerBranch: { $ne: null },
+      }).select('name ownerBranch').lean();
+      if (owned && owned.length) {
+        const p = owned[0];
+        const ownerName = (branches.find((b) => sameBranch(b._id, p.ownerBranch)) || {}).name || 'another branch';
+        return fail(res, 400, `"${p.name}" belongs to ${ownerName} only and can't be moved to another branch`);
+      }
+
       // Move the stock, line by line.
       const resultItems = [];
       const errors = [];

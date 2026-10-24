@@ -14,7 +14,7 @@ const express = require('express');
 const router = express.Router();
 const userController = require('../controller/userController');
 const auth = require('../middleware/auth');
-const { loadAccess, requirePermission, requireSuperAdmin } = require('../middleware/access');
+const { loadAccess, optionalAccess, requirePermission, requireSuperAdmin } = require('../middleware/access');
 const categoryController = require('../controller/categoryController');
 const colorController = require('../controller/colorController');
 const sizeController = require('../controller/sizeController');
@@ -219,7 +219,9 @@ router.delete('/car-variants/:id', ...staff, can('product_attributes', 'delete')
 // Product routes
 router.get('/products/random', productController.getRandomProducts); // Public route for random products
 router.get('/products/latest', productController.getLatestProducts); // Public route for latest products
-router.get('/products', productController.listProducts); // Public (website) — no auth
+// Public (website). A staff token is optional: with it, the list is limited to the
+// staff member's branch (own + shared products) and `stock` is that branch's stock.
+router.get('/products', optionalAccess, productController.listProducts);
 // Codes + stock receiving. Must sit before /products/:id.
 router.get('/products/codes/check', ...staff, can('products', 'view'), inventoryController.checkCode);
 router.get('/products/codes/new-short-code', ...staff, can('products', 'view'), inventoryController.generateShortCode);

@@ -17,6 +17,7 @@ const {
   byBranchBreakdown,
   branchStockExpr,
 } = require('../helper/branchScope');
+const { productScopeFilter } = require('../helper/productScope');
 // Force-register schemas referenced only through populate() so isolated test
 // runs (that don't touch these models directly) don't crash with
 // "Schema hasn't been registered for model X".
@@ -573,7 +574,8 @@ const reportsController = {
       const { page, limit, skip } = parsePagination(req.query, { defaultLimit: 50 });
 
       // Build stock-status filter via query expressions so the DB does the work.
-      const baseQuery = { isDeleted: { $ne: true } };
+      // Shared products + the branch's own (super admin on "all branches": every product).
+      const baseQuery = { isDeleted: { $ne: true }, ...productScopeFilter(req) };
       if (search) {
         const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         baseQuery.$or = [{ name: rx }, { category: rx }, { slug: rx }];

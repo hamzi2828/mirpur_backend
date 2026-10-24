@@ -10,6 +10,7 @@ const {
   toBranchId,
 } = require('../helper/productCodes');
 const Branch = require('../models/branch');
+const { productScopeFilter, canSeeProduct, ownerBranchForCreate } = require('../helper/productScope');
 
 // 409 for a barcode / short code that is already used (thrown by helper/productCodes.js)
 const duplicateCodeResponse = (res, error) =>
@@ -79,7 +80,8 @@ const productController = {
       const hasLimit = req.query.limit !== undefined;
       const limitNum = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 12));
 
-      const filter = {};
+      // Own branch's products + shared ones (super admin on "all branches": every product).
+      const filter = { ...productScopeFilter(req) };
       const view = await branchView(req);
       // Stock conditions of the branch being viewed (null = total stock).
       const and = [];
@@ -113,7 +115,7 @@ const productController = {
         const s = search.trim();
         const scanCode = s.toUpperCase();
         // Exact barcode / short code / SKU hit (scanner or typed code) wins
-        if (await Product.exists({ scanCodes: scanCode })) {
+        if (await Product.exists({ ...productScopeFilter(req), scanCodes: scanCode })) {
           filter.scanCodes = scanCode;
         } else if (s.length >= 3) {
           filter.$text = { $search: s };
@@ -172,7 +174,8 @@ const productController = {
       // Get all published products with stock > 0
       const products = await Product.find({
         status: 'published',
-        stock: { $gt: 0 }
+        stock: { $gt: 0 },
+        ownerBranch: null, // website: shared products only
       });
       
       // Shuffle the array and limit the results
@@ -198,7 +201,8 @@ const productController = {
       
       // Get latest published products sorted by creation date
       const products = await Product.find({
-        status: 'published'
+        status: 'published',
+        ownerBranch: null, // website: shared products only
       })
       .sort({ createdAt: -1 })
       .limit(limit);
@@ -221,7 +225,7 @@ const productController = {
     try {
       const { id } = req.params;
       const product = await Product.findById(id);
-      if (!product) return res.status(404).json({ message: 'Product not found' });
+      if (!product || !canSeeProduct(req, product)) return res.status(404).json({ message: 'Product not found' });
       const view = await branchView(req);
       return res.status(200).json({ message: 'Product fetched successfully', data: toView(product, view) });
     } catch (error) {
@@ -242,7 +246,17 @@ const productController = {
       // Use the createProductService to handle the creation logic
       const createProductService = require('../services/products/createProductService');
       const opts = await writeOptions(req);
-      const created = await createProductService.createProduct(payload, files, opts);
+      // Staff: the product belongs to their branch (only that branch sees it).
+      // Super admin: shared, unless a branch is picked in `ownerBranch`.
+      const ownerBranch = ownerBranchForCreate(req, payload.ownerBranch);
+      if (ownerBranch && !(await Branch.exists({ _id: ownerBranch }))) {
+        return res.status(400).json({ message: 'Branch not found' });
+      }
+      delete payload.ownerBranch;
+      let created = await createProductService.createProduct(payload, files, opts);
+      if (ownerBranch && created && created._id) {
+        created = (await Product.findByIdAndUpdate(created._id, { $set: { ownerBranch } }, { new: true })) || created;
+      }
       const view = await branchView(req);
 
       const productId = created && created._id ? String(created._id) : '';
@@ -280,8 +294,20 @@ const productController = {
       console.log('Update product files:', files);
       // Use the updateProductService to handle the update logic
       const updateProductService = require('../services/products/updateProductService');
+      const current = await Product.findById(id).select('ownerBranch').lean();
+      if (!current || !canSeeProduct(req, current)) return res.status(404).json({ message: 'Product not found' });
+      // Only the super admin moves a product between "shared" and one branch.
+      const changeOwner = !!(req.access && req.access.isSuperAdmin) && payload.ownerBranch !== undefined;
+      const newOwner = changeOwner ? ownerBranchForCreate(req, payload.ownerBranch) : null;
+      if (newOwner && !(await Branch.exists({ _id: newOwner }))) {
+        return res.status(400).json({ message: 'Branch not found' });
+      }
+      delete payload.ownerBranch;
       const opts = await writeOptions(req);
-      const updated = await updateProductService.updateProduct(id, payload, files, opts);
+      let updated = await updateProductService.updateProduct(id, payload, files, opts);
+      if (changeOwner && updated && updated._id) {
+        updated = (await Product.findByIdAndUpdate(updated._id, { $set: { ownerBranch: newOwner } }, { new: true })) || updated;
+      }
       const view = await branchView(req);
 
       return res.status(200).json({
@@ -310,6 +336,8 @@ const productController = {
   deleteProduct: async (req, res) => {
     try {
       const { id } = req.params;
+      const current = await Product.findById(id).select('ownerBranch').lean();
+      if (!current || !canSeeProduct(req, current)) return res.status(404).json({ message: 'Product not found' });
       const deleted = await Product.softDeleteById(id, req.user?._id || null);
       if (!deleted) return res.status(404).json({ message: 'Product not found' });
       return res.status(200).json({ message: 'Product deleted successfully', id });

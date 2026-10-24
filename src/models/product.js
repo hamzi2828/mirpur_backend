@@ -93,6 +93,10 @@ const productSchema = new mongoose.Schema(
     // Pieces per branch. Single product: its own stock. Variant product: sum of
     // the variants' branchStock per branch (kept in sync on every write).
     branchStock: { type: [branchStockSchema], default: [] },
+    // Branch that owns this product (made by its staff): only that branch and
+    // the super admin see it. null = shared product, every branch sees it.
+    // See helper/productScope.js.
+    ownerBranch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', default: null, index: true },
 
     // ----- Barcode / packaging (single products; variants carry their own) -----
     shortCode: { type: String, trim: true, default: undefined },

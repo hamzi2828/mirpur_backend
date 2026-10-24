@@ -28,6 +28,7 @@
 
 const mongoose = require('mongoose');
 const Product = require('../models/product');
+const { productScopeFilter, canSeeProduct } = require('../helper/productScope');
 const Settings = require('../models/settings');
 const code128 = require('../helper/code128');
 const {
@@ -536,10 +537,10 @@ const sendError = (res, err, fallbackMsg) => {
   return res.status(status).json(payload);
 };
 
-const loadProduct = async (id) => {
+const loadProduct = async (id, req) => {
   if (!mongoose.isValidObjectId(id)) throw badRequest('Invalid product id');
   const product = await Product.findById(id);
-  if (!product) throw notFound('Product not found');
+  if (!product || !canSeeProduct(req, product)) throw notFound('Product not found');
   return product;
 };
 
@@ -549,7 +550,7 @@ const labelController = {
   // GET /products/:id/label-data — everything a frontend needs to show a label picker.
   getLabelData: async (req, res) => {
     try {
-      const product = await loadProduct(req.params.id);
+      const product = await loadProduct(req.params.id, req);
       const ppb = Math.max(1, Math.floor(Number(product.piecesPerBox) || 1));
       const { shopName, currency } = await getShopSettings(req.query || {});
       const where = await labelBranch(req);
@@ -624,7 +625,7 @@ const labelController = {
       const size = parseSize(q.size);
       const type = parseType(q.type);
       const copies = parseCopies(q.copies);
-      const product = await loadProduct(req.params.id);
+      const product = await loadProduct(req.params.id, req);
       const where = await labelBranch(req);
 
       const { entries, skipped } = buildEntries(product, {
@@ -691,7 +692,7 @@ const labelController = {
       });
 
       const ids = [...new Set(parsed.map((p) => p.productId))];
-      const products = await Product.find({ _id: { $in: ids } });
+      const products = await Product.find({ _id: { $in: ids }, ...productScopeFilter(req) });
       const byId = new Map(products.map((p) => [String(p._id), p]));
       const missing = ids.filter((id) => !byId.has(id));
       if (missing.length) throw notFound(`Product not found: ${missing.join(', ')}`, { missing });
