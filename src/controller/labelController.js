@@ -567,6 +567,10 @@ const labelController = {
           printCode: unitMainCode(unit) || null,
           price: sellPrice(unit),
           regularPrice: Number(unit.price) || 0,
+          // cost per piece (variant's own, else the product's)
+          costPrice: Number.isFinite(Number(unit.costPrice ?? product.costPrice))
+            ? Number(unit.costPrice ?? product.costPrice)
+            : null,
           stock,
           barcodes: (unit.barcodes || []).map((b) => ({ code: b.code, qty: b.qty || 1, label: b.label || '' })),
           fullBoxCode: fb ? normalizeCode(fb.code) : null,

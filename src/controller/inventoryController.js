@@ -32,6 +32,43 @@ const toView = (product, view) =>
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(String(id || ''));
 
+// salePrice / costPrice from the Add stock form: undefined = not sent.
+function readPrices(body) {
+  const out = {};
+  for (const key of ['salePrice', 'costPrice']) {
+    const raw = body[key];
+    if (raw === undefined || raw === null || raw === '') continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return { error: `${key === 'salePrice' ? 'Sale' : 'Cost'} price must be 0 or more` };
+    out[key] = Math.round(n * 100) / 100;
+  }
+  return out;
+}
+
+// { filter, set } to save changed prices on the product / variant, or null.
+// Sale price = `price` and `discountedPrice` (same as the product form).
+function priceChanges(product, variantId, prices) {
+  const isVariant = product.productType === 'variant';
+  const unit = isVariant
+    ? (product.variants || []).find((v) => String(v.variantId) === String(variantId))
+    : product;
+  if (!unit) return null;
+  const currentSale = Number(unit.discountedPrice) > 0 ? Number(unit.discountedPrice) : Number(unit.price) || 0;
+  const currentCost = unit.costPrice ?? (isVariant ? product.costPrice : undefined);
+  const set = {};
+  const prefix = isVariant ? 'variants.$.' : '';
+  if (prices.salePrice !== undefined && prices.salePrice !== currentSale) {
+    set[`${prefix}price`] = prices.salePrice;
+    set[`${prefix}discountedPrice`] = prices.salePrice;
+  }
+  if (prices.costPrice !== undefined && prices.costPrice !== Number(currentCost)) {
+    set[`${prefix}costPrice`] = prices.costPrice;
+  }
+  if (!Object.keys(set).length) return null;
+  const filter = isVariant ? { _id: product._id, 'variants.variantId': unit.variantId } : { _id: product._id };
+  return { filter, set };
+}
+
 const sendError = (res, error, fallbackMessage) => {
   const status = error && error.status && error.status >= 400 && error.status < 600 ? error.status : 400;
   return res.status(status).json({
@@ -59,9 +96,17 @@ const inventoryController = {
       const batch = parseMaybeJSON(body.batch);
       const branchId = req.access ? await resolveWriteBranch(req) : undefined;
       // A branch's own product can only get stock in that branch.
-      const owner = await Product.findById(id).select('ownerBranch').lean();
+      const owner = await Product.findById(id).lean();
       if (!owner || !canSeeProduct(req, owner, branchId)) {
         return res.status(404).json({ success: false, message: 'Product not found in this branch' });
+      }
+
+      // New prices typed in the Add stock form (optional). They update the product.
+      const prices = readPrices(body);
+      if (prices.error) return res.status(400).json({ success: false, message: prices.error });
+      const priceSet = priceChanges(owner, body.variantId, prices);
+      if (priceSet && req.access && !req.access.can('products', 'edit')) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to change prices' });
       }
 
       const result = await stockService.receiveStock({
@@ -73,7 +118,13 @@ const inventoryController = {
         batch: batch && typeof batch === 'object' ? batch : undefined,
         branchId,
       });
-      await stockHistory.recordReceive(result, { req, body: { ...body, costPrice: batch && batch.costPrice } });
+      // Save the new prices (after the stock is in, so a failed receive changes nothing).
+      if (priceSet) {
+        await Product.updateOne(priceSet.filter, { $set: priceSet.set });
+        result.product = (await Product.findById(id)) || result.product;
+      }
+      const historyCost = (batch && batch.costPrice) ?? prices.costPrice;
+      await stockHistory.recordReceive(result, { req, body: { ...body, costPrice: historyCost } });
       const view = await branchView(req);
       const branchName = await stockService.branchName(result.branchId);
 
