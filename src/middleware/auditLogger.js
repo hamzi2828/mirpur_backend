@@ -1,4 +1,14 @@
 const AuditLog = require('../models/auditLog');
+const { runWithChanges } = require('../helper/changeLog');
+
+// ONLY update operations are logged (owner's choice): PUT / PATCH, plus the
+// POST routes that change an existing record. Each log carries the changed
+// fields (old -> new) in details.changes — see helper/changeLog.js.
+const UPDATE_POST = /\/:id\/(payment|payments|refund|set-main|reset-password|cancel|stock\/receive)$/;
+const UPDATE_POST_PATHS = new Set(['/products/:id/stock/receive']);
+const isUpdateRequest = (method, normalizedPath) =>
+  method === 'PUT' || method === 'PATCH' ||
+  (method === 'POST' && (UPDATE_POST.test(normalizedPath) || UPDATE_POST_PATHS.has(normalizedPath)));
 
 // Named actions for known routes (for nicer labels in the UI)
 const ROUTE_ACTION_MAP = {
@@ -428,6 +438,9 @@ function auditLogger(req, res, next) {
   const normalizedPath = normalizePathForMatching(req.path);
   const key = `${method} ${normalizedPath}`;
 
+  if (!isUpdateRequest(method, normalizedPath)) return next();
+  const changeCtx = { changes: [] };
+
   if (!shouldSample(key)) return next();
 
   const action = ROUTE_ACTION_MAP[key] || `${method.toLowerCase()} ${normalizedPath}`;
@@ -485,7 +498,11 @@ function auditLogger(req, res, next) {
       action,
       method,
       path: req.path,
-      details: buildDetails(action, req, capturedBody),
+      details: (() => {
+        const d = buildDetails(action, req, capturedBody) || {};
+        if (changeCtx.changes.length) d.changes = changeCtx.changes.slice(0, 20);
+        return Object.keys(d).length ? d : null;
+      })(),
       ipAddress: extractIp(req),
       userAgent: req.headers['user-agent'] || null,
       browser,
@@ -515,7 +532,8 @@ function auditLogger(req, res, next) {
     });
   }
 
-  next();
+  // Track old -> new values of everything this request changes.
+  runWithChanges(changeCtx, next);
 }
 
 module.exports = auditLogger;

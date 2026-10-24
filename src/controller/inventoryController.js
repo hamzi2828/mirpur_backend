@@ -15,6 +15,7 @@ const {
 } = require('../helper/productCodes');
 const { resolveWriteBranch } = require('../middleware/access');
 const { productScopeFilter, canSeeProduct } = require('../helper/productScope');
+const stockHistory = require('../services/stockHistoryService');
 
 // Admin view of a product: `stock` = stock in the request's branch (staff: own
 // branch; super admin: picked branch or all) — see productCodes.withBranchStock.
@@ -72,6 +73,7 @@ const inventoryController = {
         batch: batch && typeof batch === 'object' ? batch : undefined,
         branchId,
       });
+      await stockHistory.recordReceive(result, { req, body: { ...body, costPrice: batch && batch.costPrice } });
       const view = await branchView(req);
       const branchName = await stockService.branchName(result.branchId);
 

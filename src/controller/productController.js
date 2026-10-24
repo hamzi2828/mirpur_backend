@@ -11,6 +11,7 @@ const {
 } = require('../helper/productCodes');
 const Branch = require('../models/branch');
 const { productScopeFilter, canSeeProduct, ownerBranchForCreate } = require('../helper/productScope');
+const stockHistory = require('../services/stockHistoryService');
 
 // 409 for a barcode / short code that is already used (thrown by helper/productCodes.js)
 const duplicateCodeResponse = (res, error) =>
@@ -257,6 +258,8 @@ const productController = {
       if (ownerBranch && created && created._id) {
         created = (await Product.findByIdAndUpdate(created._id, { $set: { ownerBranch } }, { new: true })) || created;
       }
+      // Stock history: the stock typed in the form = opening stock.
+      await stockHistory.recordChanges(null, created, { type: 'opening', req, note: 'Added when the product was created' });
       const view = await branchView(req);
 
       const productId = created && created._id ? String(created._id) : '';
@@ -294,7 +297,7 @@ const productController = {
       console.log('Update product files:', files);
       // Use the updateProductService to handle the update logic
       const updateProductService = require('../services/products/updateProductService');
-      const current = await Product.findById(id).select('ownerBranch').lean();
+      const current = await Product.findById(id).lean();
       if (!current || !canSeeProduct(req, current)) return res.status(404).json({ message: 'Product not found' });
       // Only the super admin moves a product between "shared" and one branch.
       const changeOwner = !!(req.access && req.access.isSuperAdmin) && payload.ownerBranch !== undefined;
@@ -308,6 +311,8 @@ const productController = {
       if (changeOwner && updated && updated._id) {
         updated = (await Product.findByIdAndUpdate(updated._id, { $set: { ownerBranch: newOwner } }, { new: true })) || updated;
       }
+      // Stock history: stock typed in the product form (+ or -).
+      await stockHistory.recordChanges(current, updated, { type: 'adjustment', req, note: 'Changed in the product form' });
       const view = await branchView(req);
 
       return res.status(200).json({

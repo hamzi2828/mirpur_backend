@@ -41,6 +41,7 @@ const networkController = require('../controller/networkController');
 const branchController = require('../controller/branchController');
 const staffController = require('../controller/staffController');
 const transferController = require('../controller/transferController');
+const stockHistoryController = require('../controller/stockHistoryController');
 
 // ----- access helpers ---------------------------------------------------------
 // Logged-in staff: verify JWT, then load role/branch/permissions into req.access.
@@ -124,6 +125,9 @@ if (typeof transferController.cancel === 'function') {
   router.post('/admin/stock-transfers/:id/cancel', ...staff, can('stock_transfers', 'edit'), transferController.cancel);
 }
 router.get('/admin/stock-transfers/:id', ...staff, can('stock_transfers', 'view'), transferController.getById);
+
+// Stock history (opening stock, deliveries, product-form changes, transfers)
+router.get('/admin/stock-history', ...staff, can(['product_stock', 'stock_receive'], 'view'), stockHistoryController.list);
 
 // Category routes
 router.get('/categories/featured-with-products', cache(SEVEN_DAYS, 'categories:featured-with-products'), categoryController.listFeaturedCategoriesWithProducts); // cached 7d, invalidated on any admin CRUD
@@ -366,13 +370,13 @@ router.delete('/admin/procurement/purchases/:id', ...staff, can('procurement', '
 router.post('/admin/procurement/purchases/:id/payments', ...staff, can('procurement', 'edit'), purchaseController.addPayment);
 router.delete('/admin/procurement/purchases/:id/payments/:paymentId', ...staff, can('procurement', 'edit'), purchaseController.removePayment);
 
-// Audit Log routes (activity_log; clearing everything: super admin)
-router.get('/admin/audit-logs', ...staff, can('activity_log', 'view'), auditLogController.getAllAuditLogs);
+// Audit Log routes: super admin only (the log covers every branch)
+router.get('/admin/audit-logs', ...staff, superAdmin, auditLogController.getAllAuditLogs);
 router.delete('/admin/audit-logs', ...staff, superAdmin, auditLogController.clearAllAuditLogs);
-router.get('/admin/audit-logs/analytics', ...staff, can('activity_log', 'view'), auditLogController.getAuditAnalytics);
-router.get('/admin/audit-logs/top-users', ...staff, can('activity_log', 'view'), auditLogController.getTopUsers);
-router.get('/admin/audit-logs/user/:userId', ...staff, can('activity_log', 'view'), auditLogController.getUserAuditLogs);
-router.get('/admin/audit-logs/user/:userId/summary', ...staff, can('activity_log', 'view'), auditLogController.getUserAuditSummary);
+router.get('/admin/audit-logs/analytics', ...staff, superAdmin, auditLogController.getAuditAnalytics);
+router.get('/admin/audit-logs/top-users', ...staff, superAdmin, auditLogController.getTopUsers);
+router.get('/admin/audit-logs/user/:userId', ...staff, superAdmin, auditLogController.getUserAuditLogs);
+router.get('/admin/audit-logs/user/:userId/summary', ...staff, superAdmin, auditLogController.getUserAuditSummary);
 
 // HR & Payroll — Employees
 

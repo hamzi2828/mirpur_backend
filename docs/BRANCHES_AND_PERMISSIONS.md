@@ -169,3 +169,17 @@ by the current branch automatically.
 5. Demo database only: `npm run seed:demo-branches` creates Branch 1/Branch 2, splits the dummy
    products' stock ~60/40 and creates demo logins (passwords printed once).
    `npm run seed:demo-branches -- --remove` undoes it.
+
+## 9. Stock history and update logs
+
+**Stock history** — `GET /admin/stock-history` (permission `product_stock` or `stock_receive` view).
+Query: `productId`, `variantId`, `type` (`opening` | `received` | `adjustment` | `transfer_in` |
+`transfer_out` | `in` | `out`), `search`, `startDate`, `endDate` (YYYY-MM-DD), `page`, `limit`.
+Branch staff see their branch; super admin the picked branch or all. A row is written automatically when a
+product is created with stock (opening), on receive stock (`note` in the body is kept), when stock is
+changed in the product form (adjustment, + or -), and for each transfer (out + in). Sales are not in it
+(see POS orders). Stock that existed before: `npm run backfill:stock-history -- --apply` (once).
+
+**Update logs** — only update requests are logged now (PUT / PATCH and POST `.../:id/payment(s)`,
+`refund`, `set-main`, `reset-password`, `cancel`, `stock/receive`). Each log has `details.changes` =
+`[{ model, id, label, fields: [{ field, from, to }] }]` (passwords hidden). Activity Log is super admin only.

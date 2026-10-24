@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { mongoose, ensureConnection } = require('./src/config/mongo');
+// Old -> new values for update requests (Activity Log). Must load before any model.
+require('./src/helper/changeLog').install();
 const app = express();
 const port = process.env.PORT || 4000;
 const allRoutes = require('./src/routes/allRoutes');

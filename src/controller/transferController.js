@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const StockTransfer = require('../models/stockTransfer');
 const Branch = require('../models/branch');
 const Product = require('../models/product');
+const stockHistory = require('../services/stockHistoryService');
 const stockService = require('../services/stockService');
 const { variantLabel, toBranchId, sameBranch } = require('../helper/productCodes');
 
@@ -243,6 +244,7 @@ const transferController = {
       // Move the stock, line by line.
       const resultItems = [];
       const errors = [];
+      const moves = []; // successful stockService results, for the stock history
       let moved = 0;
       for (let index = 0; index < lines.length; index++) {
         const line = lines[index];
@@ -255,6 +257,7 @@ const transferController = {
             toBranchId: to,
             batchNo: line.batchNo,
           });
+          moves.push(r);
           const picked = stockService.pickUnit(r.product, r.variantId, { required: false });
           const v = picked && picked.variant;
           resultItems.push({
@@ -317,6 +320,12 @@ const transferController = {
           items: resultItems,
           error: lastErr && lastErr.message,
         });
+      }
+
+      // Stock history: one "out" row for the sending branch, one "in" row for the other.
+      const historyNote = body.note ? String(body.note).trim() : '';
+      for (const r of moves) {
+        await stockHistory.recordTransfer(r, { req, note: historyNote, transferNo: created.transferNo });
       }
 
       const plain = typeof created.toObject === 'function' ? created.toObject() : created;
